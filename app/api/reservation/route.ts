@@ -7,7 +7,11 @@ import {
 } from "@/lib/reservation-email"
 import type { ReservationFormData } from "@/lib/reservation-data"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+function getResend() {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) return null
+  return new Resend(apiKey)
+}
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -40,7 +44,9 @@ function validateBody(body: unknown): body is ReservationFormData {
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.RESEND_API_KEY) {
+    const resend = getResend()
+
+    if (!resend) {
       return NextResponse.json(
         { error: "E-mail service is niet geconfigureerd." },
         { status: 500 }
