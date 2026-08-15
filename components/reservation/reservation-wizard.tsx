@@ -211,7 +211,8 @@ export function ReservationWizard() {
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error ?? "Reservering mislukt.")
+        const detail = result.detail ? ` (${result.detail})` : ""
+        throw new Error((result.error ?? "Reservering mislukt.") + detail)
       }
 
       setSubmitted(true)

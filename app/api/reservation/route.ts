@@ -42,6 +42,16 @@ function validateBody(body: unknown): body is ReservationFormData {
   )
 }
 
+function userFacingError(resendMessage: string) {
+  if (resendMessage.includes("domain is not verified")) {
+    return "E-mail domein is nog niet geverifieerd bij Resend. Neem contact op met het restaurant."
+  }
+  if (resendMessage.includes("only send testing emails")) {
+    return "E-mail is nog in testmodus. Het restaurant moet het Resend-domein instellen."
+  }
+  return "Kon de reservering niet versturen. Probeer het opnieuw of bel ons."
+}
+
 export async function POST(request: Request) {
   try {
     const resend = getResend()
@@ -54,9 +64,10 @@ export async function POST(request: Request) {
     }
 
     const restaurantEmail = process.env.RESTAURANT_EMAIL
-    const fromEmail = process.env.RESEND_FROM_EMAIL
+    const fromEmail =
+      process.env.RESEND_FROM_EMAIL ?? "Merhaba Habesha <reserveringen@habesha-merhaba.nl>"
 
-    if (!restaurantEmail || !fromEmail) {
+    if (!restaurantEmail) {
       return NextResponse.json(
         { error: "E-mail instellingen ontbreken." },
         { status: 500 }
@@ -75,30 +86,35 @@ export async function POST(request: Request) {
     const restaurantMail = buildRestaurantEmail(body)
     const customerMail = buildCustomerEmail(body)
 
-    const [restaurantResult, customerResult] = await Promise.all([
-      resend.emails.send({
-        from: fromEmail,
-        to: restaurantEmail,
-        replyTo: body.email,
-        subject: restaurantMail.subject,
-        html: restaurantMail.html,
-      }),
-      resend.emails.send({
-        from: fromEmail,
-        to: body.email,
-        replyTo: restaurantEmail,
-        subject: customerMail.subject,
-        html: customerMail.html,
-      }),
-    ])
+    const restaurantResult = await resend.emails.send({
+      from: fromEmail,
+      to: restaurantEmail,
+      replyTo: body.email,
+      subject: restaurantMail.subject,
+      html: restaurantMail.html,
+    })
 
     if (restaurantResult.error) {
       console.error("Restaurant email error:", restaurantResult.error)
+      const message = userFacingError(restaurantResult.error.message)
       return NextResponse.json(
-        { error: "Kon de reservering niet versturen. Probeer het opnieuw of bel ons." },
+        {
+          error: message,
+          ...(process.env.NODE_ENV === "development" && {
+            detail: restaurantResult.error.message,
+          }),
+        },
         { status: 502 }
       )
     }
+
+    const customerResult = await resend.emails.send({
+      from: fromEmail,
+      to: body.email,
+      replyTo: restaurantEmail,
+      subject: customerMail.subject,
+      html: customerMail.html,
+    })
 
     if (customerResult.error) {
       console.error("Customer email error:", customerResult.error)
